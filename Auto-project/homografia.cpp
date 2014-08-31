@@ -6,14 +6,22 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/nonfree/nonfree.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include <string>
+#include <boost/filesystem.hpp>
 
 using namespace std;
 using namespace cv;
+using namespace boost::filesystem;
 
-int homografia(string image_scene, string image_object)
+
+int homografia(path image_scene, path image_object, bool is_save = false, path output_folder = "")
 {
-	Mat img_object = imread(image_object, CV_LOAD_IMAGE_GRAYSCALE);
-	Mat img_scene = imread(image_scene, CV_LOAD_IMAGE_GRAYSCALE);
+	path image_saved_name;
+
+	Mat img_object = imread(image_object.string(), -1);
+	Mat img_scene = imread(image_scene.string(), CV_LOAD_IMAGE_GRAYSCALE);
+
 
 	if (!img_object.data || !img_scene.data)
 	{
@@ -24,7 +32,7 @@ int homografia(string image_scene, string image_object)
 
 	//-- Step 1: Detect the keypoints using SURF Detector
 	cout << "Step 1: Detect the keypoints using SURF Detector" << endl;
-	int minHessian = 200;
+	int minHessian = 20;
 
 	SurfFeatureDetector detector(minHessian);
 
@@ -32,6 +40,9 @@ int homografia(string image_scene, string image_object)
 
 	detector.detect(img_object, keypoints_object);
 	detector.detect(img_scene, keypoints_scene);
+
+	printf("-- number of keypoints scene: %d \n", keypoints_scene.size());
+	printf("-- number of keypoints object: %d \n", keypoints_object.size());
 
 	//-- Step 2: Calculate descriptors (feature vectors)
 	cout << "Step 2: Calculate descriptors (feature vectors)" << endl;
@@ -42,13 +53,16 @@ int homografia(string image_scene, string image_object)
 	extractor.compute(img_object, keypoints_object, descriptors_object);
 	extractor.compute(img_scene, keypoints_scene, descriptors_scene);
 
+	printf("-- number of descriptors scene: %d \n", descriptors_scene.size());
+	printf("-- number of descriptors object: %d \n", descriptors_object.size());
+
 	//-- Step 3: Matching descriptor vectors using FLANN matcher
 	cout << "Step 3: Matching descriptor vectors using FLANN matcher" << endl;
 	FlannBasedMatcher matcher;
 	std::vector< DMatch > matches;
 	matcher.match(descriptors_object, descriptors_scene, matches);
 
-	double max_dist = 0; double min_dist = 100;
+	double max_dist = 0; double min_dist = 10;
 
 	//-- Quick calculation of max and min distances between keypoints
 	cout << "Quick calculation of max and min distances between keypoints" << endl;
@@ -79,6 +93,8 @@ int homografia(string image_scene, string image_object)
 		good_matches, img_matches, Scalar::all(-1), Scalar::all(-1),
 		vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
 
+	printf("-- number of matches: %d \n", good_matches.size());
+
 	//-- Localize the object
 	cout << "Localize the object" << endl;
 	std::vector<Point2f> obj;
@@ -102,6 +118,11 @@ int homografia(string image_scene, string image_object)
 
 	perspectiveTransform(obj_corners, scene_corners, H);
 
+	printf("-- Scene corners 0: %d \n", scene_corners[0]);
+	printf("-- Scene corners 1: %d \n", scene_corners[1]);
+	printf("-- Scene corners 2: %d \n", scene_corners[2]);
+	printf("-- Scene corners 3: %d \n", scene_corners[3]);
+
 	//-- Draw lines between the corners (the mapped object in the scene - image_2 )
 	cout << "Draw lines between the corners" << endl;
 	line(img_matches, scene_corners[0] + Point2f(img_object.cols, 0), scene_corners[1] + Point2f(img_object.cols, 0), Scalar(0, 255, 0), 4);
@@ -112,6 +133,15 @@ int homografia(string image_scene, string image_object)
 	//-- Show detected matches
 	cout << "Show detected matches" << endl;
 	imshow("Good Matches & Object detection", img_matches);
+
+	//-- Save the image if the boolean is_save is true
+
+	if (is_save)
+	{
+		image_saved_name = output_folder.parent_path().string() + "/" + path(image_object.stem().string() + "__" + image_scene.stem().string() + ".jpg").string();
+		imwrite(image_saved_name.string(), img_matches);
+		cout << "Output image saved in: " + image_saved_name.string() << endl;
+	}
 
 	waitKey(0);
 	return 0;
