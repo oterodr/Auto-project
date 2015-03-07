@@ -9,21 +9,21 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include <string>
 #include <boost/filesystem.hpp>
+#include "homografia.hpp"
 
 using namespace std;
 using namespace cv;
 using namespace boost::filesystem;
 
 
-int homografia(path image_scene, path image_object, bool is_save = false, path output_folder = "")
+int homografia(path image_scene, path image_object, bool is_save, path output_folder)
 {
 	path image_saved_name;
 
 	Mat img_object = imread(image_object.string(), -1);
 	Mat img_scene = imread(image_scene.string(), CV_LOAD_IMAGE_GRAYSCALE);
 
-
-	if (!img_object.data || !img_scene.data)
+	if (img_object.data == NULL || img_scene.data == NULL)
 	{
 		cout << !img_scene.data + " error reading images" << endl;
 		system("pause"); //wait for a key press
@@ -32,7 +32,7 @@ int homografia(path image_scene, path image_object, bool is_save = false, path o
 
 	//-- Step 1: Detect the keypoints using SURF Detector
 	cout << "Step 1: Detect the keypoints using SURF Detector" << endl;
-	int minHessian = 20;
+	int minHessian = 3000;		// higher for less points
 
 	SurfFeatureDetector detector(minHessian);
 
@@ -40,7 +40,6 @@ int homografia(path image_scene, path image_object, bool is_save = false, path o
 
 	detector.detect(img_object, keypoints_object);
 	detector.detect(img_scene, keypoints_scene);
-
 	printf("-- number of keypoints scene: %d \n", keypoints_scene.size());
 	printf("-- number of keypoints object: %d \n", keypoints_object.size());
 
@@ -62,10 +61,9 @@ int homografia(path image_scene, path image_object, bool is_save = false, path o
 	std::vector< DMatch > matches;
 	matcher.match(descriptors_object, descriptors_scene, matches);
 
-	double max_dist = 0; double min_dist = 10;
-
 	//-- Quick calculation of max and min distances between keypoints
 	cout << "Quick calculation of max and min distances between keypoints" << endl;
+	double max_dist = 0; double min_dist = 100;
 	for (int i = 0; i < descriptors_object.rows; i++)
 	{
 		double dist = matches[i].distance;
@@ -75,11 +73,11 @@ int homografia(path image_scene, path image_object, bool is_save = false, path o
 
 	printf("-- Max dist : %f \n", max_dist);
 	printf("-- Min dist : %f \n", min_dist);
-
+	
 	//-- Draw only "good" matches (i.e. whose distance is less than 3*min_dist )
 	cout << "Draw only 'good' matches" << endl;
 	std::vector< DMatch > good_matches;
-
+	
 	for (int i = 0; i < descriptors_object.rows; i++)
 	{
 		if (matches[i].distance < 3 * min_dist)
@@ -88,12 +86,16 @@ int homografia(path image_scene, path image_object, bool is_save = false, path o
 		}
 	}
 
+	Mat img_keypoints_object; Mat img_keypoints_scene;
+	drawKeypoints(img_object, keypoints_object, img_keypoints_object, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+	drawKeypoints(img_scene, keypoints_scene, img_keypoints_scene, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+
 	Mat img_matches;
-	drawMatches(img_object, keypoints_object, img_scene, keypoints_scene,
+	drawMatches(img_keypoints_object, keypoints_object, img_keypoints_scene, keypoints_scene,
 		good_matches, img_matches, Scalar::all(-1), Scalar::all(-1),
 		vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
 
-	printf("-- number of matches: %d \n", good_matches.size());
+	printf("-- number of good matches: %d (%d)\n", good_matches.size(), matches.size());
 
 	//-- Localize the object
 	cout << "Localize the object" << endl;
@@ -110,7 +112,7 @@ int homografia(path image_scene, path image_object, bool is_save = false, path o
 	Mat H = findHomography(obj, scene, CV_RANSAC);
 
 	//-- Get the corners from the image_1 ( the object to be "detected" )
-	cout << "Get the corners from the image_1" << endl;
+	cout << "Get the corners from object" << endl;
 	std::vector<Point2f> obj_corners(4);
 	obj_corners[0] = cvPoint(0, 0); obj_corners[1] = cvPoint(img_object.cols, 0);
 	obj_corners[2] = cvPoint(img_object.cols, img_object.rows); obj_corners[3] = cvPoint(0, img_object.rows);
@@ -146,3 +148,4 @@ int homografia(path image_scene, path image_object, bool is_save = false, path o
 	waitKey(0);
 	return 0;
 }
+

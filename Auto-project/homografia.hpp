@@ -14,4 +14,5 @@ using namespace cv;
 using namespace std;
 using namespace boost::filesystem;
 
+
 int homografia(path image_scene, path image_object, bool is_save = false, path output_folder = "");
